@@ -15,10 +15,30 @@ st.set_page_config(page_title="Sales Dashboard", page_icon=":bar_chart:", layout
 names = ["Peter Parker", "Rebecca Miller"]
 usernames = ["pparker", "rmiller"]
 
-# load hashed passwords
+# load hashed passwords: a restricted unpickler, so a swapped
+# credentials file cannot execute code here (the file holds only a
+# list of password-hash strings). Deployment file permissions for
+# hashed_pw.pkl still matter; this only removes code execution.
+class _RestrictedUnpickler(pickle.Unpickler):
+    _ALLOWED = {
+        ("builtins", "list"), ("builtins", "dict"),
+        ("builtins", "tuple"), ("builtins", "set"),
+        ("builtins", "str"), ("builtins", "bytes"),
+        ("builtins", "bytearray"), ("builtins", "int"),
+        ("builtins", "float"), ("builtins", "bool"),
+    }
+
+    def find_class(self, module, name):
+        if (module, name) in self._ALLOWED:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"forbidden class in credentials file: {module}.{name}"
+        )
+
+
 file_path = Path(__file__).parent / "hashed_pw.pkl"
 with file_path.open("rb") as file:
-    hashed_passwords = pickle.load(file)
+    hashed_passwords = _RestrictedUnpickler(file).load()
 
 authenticator = stauth.Authenticate(names, usernames, hashed_passwords,
     "sales_dashboard", "abcdef", cookie_expiry_days=30)
